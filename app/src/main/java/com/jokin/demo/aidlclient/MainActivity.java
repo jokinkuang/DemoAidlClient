@@ -5,7 +5,10 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Message;
+import android.os.Messenger;
 import android.os.RemoteException;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
@@ -19,22 +22,115 @@ import com.jokin.demo.aidl.sdk.actions.OpenAction;
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "MainActivity";
 
-    private static final String PACKAGE_NAME = "com.jokin.demo.aidl.server";
-    private static final String ACTION_SERVICE = PACKAGE_NAME+".ActionService";
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         initClient();
+        initMessenger();
     }
 
     @Override
     protected void onStop() {
         super.onStop();
         unbindService(mServiceConnection);
+        unbindService(mMessengerServiceConnection);
     }
+
+    //////////// Messenger /////////////
+
+    private static final String MESSENGER_PACKAGE_NAME = "com.jokin.demo.aidl.server";
+    private static final String MESSENGER_ACTION_SERVICE = MESSENGER_PACKAGE_NAME+".MessengerService";
+
+    public static final int OPEN_ACTION = 1000;
+    public static final int CLOSE_ACTION = 1001;
+
+    public static final int OPEN_RESULT = 2000;
+    public static final int CLOSE_RESULT = 2001;
+
+    public static final String KEY_OF_COLOR = "key.color";
+    public static final String KEY_OF_SIZE = "key.size";
+    public static final String KEY_OF_TIP = "key.tip";
+
+    private void initMessenger() {
+        Intent intentService = new Intent();
+        intentService.setComponent(new ComponentName(MESSENGER_PACKAGE_NAME, MESSENGER_ACTION_SERVICE));
+        bindService(intentService, mMessengerServiceConnection, BIND_AUTO_CREATE);
+
+        findViewById(R.id.openActionMessenger).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    Message message = Message.obtain();
+                    message.what = OPEN_ACTION;
+                    Bundle bundle = new Bundle();
+                    bundle.putInt(KEY_OF_COLOR, Color.BLACK);
+                    bundle.putInt(KEY_OF_SIZE, 10);
+                    message.setData(bundle);
+                    message.replyTo = mClientMessenger;
+
+                    mServerMessenger.send(message);
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        findViewById(R.id.closeActionMessenger).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    Message message = Message.obtain();
+                    message.what = CLOSE_ACTION;
+                    Bundle bundle = new Bundle();
+                    bundle.putString(KEY_OF_TIP, "Messenger要close拉！");
+                    message.setData(bundle);
+                    message.replyTo = mClientMessenger;
+
+                    mServerMessenger.send(message);
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+    }
+
+    private Messenger mServerMessenger;
+    private ServiceConnection mMessengerServiceConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            mServerMessenger = new Messenger(service);
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            mServerMessenger = null;
+        }
+    };
+
+    /**
+     * 注意内存泄漏，这里不修复了，参考Server。
+     */
+    Messenger mClientMessenger = new Messenger(new Handler() {
+        @Override
+        public void handleMessage(final Message msg) {
+            switch (msg.what) {
+                case OPEN_RESULT:
+                    Log.e(TAG, "open with result:"+msg.toString());
+                    break;
+                case CLOSE_RESULT:
+                    Log.e(TAG, "close with result:"+msg.toString());
+                    break;
+                default:
+                    break;
+            }
+        }
+    });
+
+    //////////// AIDL ///////////////////
+
+    private static final String PACKAGE_NAME = "com.jokin.demo.aidl.server";
+    private static final String ACTION_SERVICE = PACKAGE_NAME+".ActionService";
 
     private void initClient() {
         Intent intentService = new Intent();
